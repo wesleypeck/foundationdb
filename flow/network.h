@@ -92,6 +92,7 @@ struct IPAddress {
 	              "IPAddressStore must be std::array<uint8_t, 16>");
 
 	IPAddress();
+	explicit IPAddress(const boost::asio::ip::address& ipaddr);
 	explicit IPAddress(const IPAddressStore& v6addr);
 	explicit IPAddress(uint32_t v4addr);
 
@@ -156,20 +157,33 @@ struct Traceable<IPAddress> : std::true_type {
 
 struct NetworkAddress {
 	// A NetworkAddress identifies a particular running server (i.e. a TCP endpoint).
+	std::string host;
 	IPAddress ip;
 	uint16_t port;
 	uint16_t flags;
 
 	enum { FLAG_PRIVATE = 1, FLAG_TLS = 2 };
 
-	NetworkAddress() : ip(IPAddress(0)), port(0), flags(FLAG_PRIVATE) {}
+	NetworkAddress() : host(""), ip(IPAddress(0)), port(0), flags(FLAG_PRIVATE) {}
+
+	NetworkAddress(const std::string& hostName, const IPAddress& address, uint16_t port, bool isPublic, bool isTLS)
+	  : host(hostName), ip(address), port(port), flags((isPublic ? 0 : FLAG_PRIVATE) | (isTLS ? FLAG_TLS : 0)) {}
+	NetworkAddress(const std::string& hostName, uint32_t ip, uint16_t port, bool isPublic, bool isTLS)
+	  : NetworkAddress(hostName, IPAddress(ip), port, isPublic, isTLS) {}
+	NetworkAddress(const std::string& hostName, const boost::asio::ip::tcp::endpoint& endpoint, bool isPublic, bool isTLS)
+	  : NetworkAddress(hostName, IPAddress(endpoint.address()), endpoint.port(), isPublic, isTLS) {}
+
 	NetworkAddress(const IPAddress& address, uint16_t port, bool isPublic, bool isTLS)
-	  : ip(address), port(port), flags((isPublic ? 0 : FLAG_PRIVATE) | (isTLS ? FLAG_TLS : 0)) {}
+	  : NetworkAddress("", address, port, isPublic, isTLS) { }
 	NetworkAddress(uint32_t ip, uint16_t port, bool isPublic, bool isTLS)
-	  : NetworkAddress(IPAddress(ip), port, isPublic, isTLS) {}
+	  : NetworkAddress("", ip, port, isPublic, isTLS) { }
+	NetworkAddress(const boost::asio::ip::tcp::endpoint& endpoint, bool isPublic, bool isTLS)
+	  : NetworkAddress("", endpoint, isPublic, isTLS) { }
 
 	NetworkAddress(uint32_t ip, uint16_t port) : NetworkAddress(ip, port, false, false) {}
 	NetworkAddress(const IPAddress& ip, uint16_t port) : NetworkAddress(ip, port, false, false) {}
+	NetworkAddress(const boost::asio::ip::tcp::endpoint& endpoint)
+	  : NetworkAddress(endpoint, false, false) {}
 
 	bool operator==(NetworkAddress const& r) const { return ip == r.ip && port == r.port && flags == r.flags; }
 	bool operator!=(NetworkAddress const& r) const { return ip != r.ip || port != r.port || flags != r.flags; }
@@ -187,7 +201,9 @@ struct NetworkAddress {
 	bool isV6() const { return ip.isV6(); }
 
 	static NetworkAddress parse( std::string const& );
+	static NetworkAddress parseHost( std::string const& );
 	static std::vector<NetworkAddress> parseList( std::string const& );
+	static std::vector<NetworkAddress> parseHostList( std::string const& );
 	std::string toString() const;
 
 	template <class Ar>
@@ -256,6 +272,7 @@ struct NetworkAddressList {
 std::string toIPVectorString(std::vector<uint32_t> ips);
 std::string toIPVectorString(const std::vector<IPAddress>& ips);
 std::string formatIpPort(const IPAddress& ip, uint16_t port);
+std::string formatHostPort(const std::string& host, uint16_t port);
 
 template <class T> class Future;
 template <class T> class Promise;

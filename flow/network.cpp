@@ -28,6 +28,14 @@ IPAddress::IPAddress() : isV6addr(false) {
 	addr.v4 = 0;
 }
 
+IPAddress::IPAddress(const boost::asio::ip::address& ipaddr) : isV6addr(ipaddr.is_v6()) {
+	if (ipaddr.is_v6()) {
+		addr.v6 = ipaddr.to_v6().to_bytes();
+	} else {
+		addr.v4 = ipaddr.to_v4().to_ulong();
+	}
+}
+
 IPAddress::IPAddress(const IPAddressStore& v6addr) : isV6addr(true) {
 	addr.v6 = v6addr;
 }
@@ -65,7 +73,7 @@ std::string IPAddress::toString() const {
 Optional<IPAddress> IPAddress::parse(std::string str) {
 	try {
 		auto addr = boost::asio::ip::address::from_string(str);
-		return addr.is_v6() ? IPAddress(addr.to_v6().to_bytes()) : IPAddress(addr.to_v4().to_ulong());
+		return IPAddress(addr);
 	} catch (...) {
 		return Optional<IPAddress>();
 	}
@@ -78,7 +86,7 @@ bool IPAddress::isValid() const {
 	return addr.v4 != 0;
 }
 
-NetworkAddress NetworkAddress::parse( std::string const& s ) {
+static NetworkAddress parseNetworkAddress( std::string const& s, bool use_dns ) {
 	if (s.empty()) {
 		throw connection_string_invalid();
 	}
@@ -92,43 +100,81 @@ NetworkAddress NetworkAddress::parse( std::string const& s ) {
 		f = s;
 	}
 
+	std::string hostName, host, port;
 	if (f[0] == '[') {
 		// IPv6 address/port pair is represented as "[ip]:port"
 		auto addrEnd = f.find_first_of(']');
-		if (addrEnd == std::string::npos || f[addrEnd + 1] != ':') {
+		if (addrEnd == std::string::npos || f[addrEnd + 1] != ':')
 			throw connection_string_invalid();
+
+		hostName = f.substr(0, addrEnd+1);
+		host = f.substr(1, addrEnd - 1);
+		port = f.substr(addrEnd + 2);
+	} else {
+		auto addrEnd = f.find_last_of(':');
+		if (addrEnd == std::string::npos)
+			throw connection_string_invalid();
+
+		hostName = f.substr(0, addrEnd);
+		host = hostName;
+		port = f.substr(addrEnd + 1, f.size());
+	}
+
+	try {
+		boost::asio::io_service io_service;
+		boost::asio::ip::tcp::resolver resolver(io_service);
+
+		auto flags = boost::asio::ip::tcp::resolver::numeric_service;
+		if (!use_dns) {
+			flags = flags | boost::asio::ip::tcp::resolver::numeric_host;
 		}
 
-		auto port = std::stoi(f.substr(addrEnd + 2));
-		auto addr = IPAddress::parse(f.substr(1, addrEnd - 1));
-		if (!addr.present()) {
-			throw connection_string_invalid();
-		}
-		return NetworkAddress(addr.get(), port, true, isTLS);
-	} else {
-		// TODO: Use IPAddress::parse
-		int a, b, c, d, port, count = -1;
-		if (sscanf(f.c_str(), "%d.%d.%d.%d:%d%n", &a, &b, &c, &d, &port, &count) < 5 || count != f.size())
-			throw connection_string_invalid();
-		return NetworkAddress((a << 24) + (b << 16) + (c << 8) + d, port, true, isTLS);
+		boost::asio::ip::tcp::resolver::iterator ipaddrs = resolver.resolve(host, port, flags);
+		return NetworkAddress(hostName, *ipaddrs, true, isTLS);
+	} catch (...) {
+		throw connection_string_invalid();
 	}
 }
 
-std::vector<NetworkAddress> NetworkAddress::parseList( std::string const& addrs ) {
+NetworkAddress NetworkAddress::parse( std::string const& s ) {
+	return parseNetworkAddress(s, false);
+}
+
+NetworkAddress NetworkAddress::parseHost( std::string const& s ) {
+	return parseNetworkAddress(s, true);
+}
+
+static std::vector<std::string> parseAddressList( std::string const& addrs ) {
 	// Split addrs on ',' and parse them individually
-	std::vector<NetworkAddress> coord;
+	std::vector<std::string> lst;
 	for(int p = 0; p <= addrs.size(); ) {
 		int pComma = addrs.find_first_of(',', p);
 		if (pComma == addrs.npos) pComma = addrs.size();
-		NetworkAddress parsedAddress = NetworkAddress::parse( addrs.substr(p, pComma-p) );
-		coord.push_back( parsedAddress );
+		lst.push_back(addrs.substr(p, pComma-p));
 		p = pComma + 1;
 	}
+	return lst;
+}
+
+std::vector<NetworkAddress> NetworkAddress::parseList( std::string const& addrs ) {
+	std::vector<std::string> addr_lst = parseAddressList(addrs);
+	std::vector<NetworkAddress> coord(addr_lst.size());
+	std::transform(addr_lst.begin(), addr_lst.end(), coord.begin(), parse);
+	return coord;
+}
+
+std::vector<NetworkAddress> NetworkAddress::parseHostList( std::string const& addrs ) {
+	std::vector<std::string> addr_lst = parseAddressList(addrs);
+	std::vector<NetworkAddress> coord(addr_lst.size());
+	std::transform(addr_lst.begin(), addr_lst.end(), coord.begin(), parseHost);
 	return coord;
 }
 
 std::string NetworkAddress::toString() const {
-	return formatIpPort(ip, port) + (isTLS() ? ":tls" : "");
+	if (host.empty())
+		return formatIpPort(ip, port) + (isTLS() ? ":tls" : "");
+	else
+		return formatHostPort(host, port) + (isTLS() ? ":tls" : "");
 }
 
 std::string toIPVectorString(std::vector<uint32_t> ips) {
@@ -154,6 +200,10 @@ std::string toIPVectorString(const std::vector<IPAddress>& ips) {
 std::string formatIpPort(const IPAddress& ip, uint16_t port) {
 	const char* patt = ip.isV6() ? "[%s]:%d" : "%s:%d";
 	return format(patt, ip.toString().c_str(), port);
+}
+
+std::string formatHostPort(const std::string& host, uint16_t port) {
+	return format("%s:%d", host.c_str(), port);
 }
 
 Future<Reference<IConnection>> INetworkConnections::connect( std::string host, std::string service, bool useTLS ) {

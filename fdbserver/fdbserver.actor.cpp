@@ -782,7 +782,7 @@ std::pair<NetworkAddressList, NetworkAddressList> buildNetworkAddresses(const Cl
 			}
 		} else {
 			try {
-				currentPublicAddress = NetworkAddress::parse(publicAddressStr);
+				currentPublicAddress = NetworkAddress::parseHost(publicAddressStr);
 			} catch (Error&) {
 				fprintf(stderr, "ERROR: Could not parse network address `%s' (specify as IP_ADDRESS:PORT)\n", publicAddressStr.c_str());
 				throw;
