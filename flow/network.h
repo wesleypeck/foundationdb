@@ -201,9 +201,9 @@ struct NetworkAddress {
 	bool isV6() const { return ip.isV6(); }
 
 	static NetworkAddress parse( std::string const& );
-	static NetworkAddress parseHost( std::string const& );
 	static std::vector<NetworkAddress> parseList( std::string const& );
-	static std::vector<NetworkAddress> parseHostList( std::string const& );
+
+	std::string hostName() const;
 	std::string toString() const;
 
 	template <class Ar>
@@ -213,7 +213,7 @@ struct NetworkAddress {
 			serializer(ar, ipV4, port, flags);
 			ip = IPAddress(ipV4);
 		} else {
-			serializer(ar, ip, port, flags);
+			serializer(ar, host, ip, port, flags);
 		}
 	}
 };

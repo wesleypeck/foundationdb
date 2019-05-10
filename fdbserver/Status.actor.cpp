@@ -290,7 +290,7 @@ static JsonBuilderObject machineStatusFetcher(WorkerEvents mMetrics, vector<Work
 		const TraceEventFields& event = it->second;
 
 		try {
-			std::string address = it->first.ip.toString();
+			std::string address = it->first.hostName();
 			// We will use the "physical" caluculated machine ID here to limit exposure to machineID repurposing
 			std::string machineId = event.getValue("MachineID");
 

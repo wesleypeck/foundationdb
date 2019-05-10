@@ -173,8 +173,8 @@ ClusterConnectionString::ClusterConnectionString( std::string const& connectionS
 
 	parseKey(key);
 
-	coord = NetworkAddress::parseHostList(addrs);
-	ASSERT( coord.size() > 0 );  // parseHostList() always returns at least one address if it doesn't throw
+	coord = NetworkAddress::parseList(addrs);
+	ASSERT( coord.size() > 0 );  // parseList() always returns at least one address if it doesn't throw
 
 	std::sort( coord.begin(), coord.end() );
 	// Check that there are no duplicate addresses

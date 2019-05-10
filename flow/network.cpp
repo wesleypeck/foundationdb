@@ -137,10 +137,6 @@ static NetworkAddress parseNetworkAddress( std::string const& s, bool use_dns ) 
 }
 
 NetworkAddress NetworkAddress::parse( std::string const& s ) {
-	return parseNetworkAddress(s, false);
-}
-
-NetworkAddress NetworkAddress::parseHost( std::string const& s ) {
 	return parseNetworkAddress(s, true);
 }
 
@@ -163,11 +159,8 @@ std::vector<NetworkAddress> NetworkAddress::parseList( std::string const& addrs 
 	return coord;
 }
 
-std::vector<NetworkAddress> NetworkAddress::parseHostList( std::string const& addrs ) {
-	std::vector<std::string> addr_lst = parseAddressList(addrs);
-	std::vector<NetworkAddress> coord(addr_lst.size());
-	std::transform(addr_lst.begin(), addr_lst.end(), coord.begin(), parseHost);
-	return coord;
+std::string NetworkAddress::hostName() const {
+	return host.empty() ? ip.toString() : host;
 }
 
 std::string NetworkAddress::toString() const {
